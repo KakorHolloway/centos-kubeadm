@@ -6,7 +6,9 @@ Done to be execute with ansible
 You will need : 
 
 1 lb (will use nginx)
+
 at least 1 master
+
 at least 1 worker
 
 All with centos-9 image.
