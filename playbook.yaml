@@ -1,0 +1,48 @@
+---
+- name: Prepare all servers with common base
+  hosts: lb
+  roles:
+    - lb-install
+- name: Prepare all servers with common base
+  hosts: masters, master-main, workers
+  roles:
+    - base-install
+- name: Init Master 
+  hosts: master-main
+  tasks:
+  - name: Launch kubeadm 
+    become: yes
+    ansible.builtin.shell:
+      cmd: "kubeadm init --pod-network-cidr=10.244.0.0/16 --control-plane-endpoint={{ hostvars[groups['lb'].0]['ansible_facts']['default_ipv4']['address'] }} --cri-socket unix:///var/run/cri-dockerd.sock"
+  - name: Set up env vars
+    become: yes
+    ansible.builtin.shell:
+      cmd: mkdir -p $HOME/.kube && cp -i /etc/kubernetes/admin.conf $HOME/.kube/config && chown $(id -u):$(id -g) $HOME/.kube/config
+  - name: Install calico
+    become: yes
+    ansible.builtin.shell:
+      cmd: kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.24.5/manifests/calico.yaml
+  - name: Get token
+    become: yes
+    ansible.builtin.shell:
+      cmd: kubeadm token create --print-join-command
+    register: join
+  - name: Get certs
+    become: yes
+    ansible.builtin.shell:
+      cmd: kubeadm init phase upload-certs --upload-certs --config /root/cri-socket.yaml
+    register: cert
+- name: Join Worker
+  hosts: workers
+  tasks:
+  - name: Join to master command
+    become: yes
+    ansible.builtin.shell:
+      cmd: "{{ hostvars[groups['master-main'].0].join.stdout }} --cri-socket unix:///var/run/cri-dockerd.sock"
+- name: Join Master
+  hosts: masters
+  tasks:
+  - name: Join control plane as control plane
+    become: yes
+    ansible.builtin.shell:
+      cmd: "{{ hostvars[groups['master-main'].0].join.stdout }} --cri-socket unix:///var/run/cri-dockerd.sock --control-plane --certificate-key {{ hostvars[groups['master-main'].0].cert.stdout_lines[-1] }}"

@@ -1,0 +1,138 @@
+---
+- name: Copy hosts file
+  ansible.builtin.template:
+    src: ./files/hosts
+    dest: /etc/hosts
+    mode: '0666'
+    owner: 0
+    group: 0
+  become: yes
+- name: Configure dns server 
+  become: yes
+  ansible.builtin.shell:
+    cmd: unlink /etc/resolv.conf && echo nameserver 8.8.8.8 > /etc/resolv.conf
+- name: Import modules k8s.conf
+  become: yes
+  ansible.builtin.copy:
+    src: ./files/etc/modules-load.d/k8s.conf
+    dest: /etc/modules-load.d/k8s.conf
+    mode: '0644'
+- name: Import sysctl k8s.conf
+  become: yes
+  ansible.builtin.copy:
+    src: ./files/etc/sysctl.d/k8s.conf
+    dest: /etc/sysctl.d/k8s.conf
+    mode: '0644'
+- name : Enable mob_probe
+  become: yes
+  register: result
+  ansible.builtin.shell:
+    cmd: modprobe overlay && modprobe br_netfilter && sysctl --system
+- name : check if lsmod return attemp result 
+  become: yes
+  register: result
+  ansible.builtin.shell:
+    cmd: lsmod | grep br_netfilter
+  failed_when: result.rc == 1
+- name : check if lsmod return attemp result 
+  become: yes
+  register: result
+  ansible.builtin.shell:
+    cmd: lsmod | grep overlay
+  failed_when: result.rc == 1
+- name: Activate sysctl conf 
+  become: yes
+  ansible.builtin.shell:
+    cmd: sysctl --system && sysctl net.bridge.bridge-nf-call-iptables net.bridge.bridge-nf-call-ip6tables net.ipv4.ip_forward
+
+- name: Update repositories for yum
+  become: yes
+  ansible.builtin.dnf:
+    name: 
+      - yum-utils 
+      - device-mapper-persistent-data 
+      - lvm2
+    update_cache: true
+    state: latest
+
+- name: Add Docker repo
+  get_url:
+    url: https://download.docker.com/linux/centos/docker-ce.repo
+    dest: /etc/yum.repos.d/docker-ce.repo
+  become: yes
+
+- name: Install docker
+  become: yes
+  ansible.builtin.dnf:
+    name: 
+      - docker-ce
+      - docker-ce-cli
+      - docker-buildx-plugin
+    update_cache: true
+    state: latest
+
+- name: Enable cri-docker.service
+  become: yes
+  ansible.builtin.shell:
+    cmd: systemctl enable --now docker
+
+- name: Copy cri-dockerd
+  become: yes
+  ansible.builtin.copy:
+    src: ./files/cri-dockerd
+    dest: /usr/local/bin/cri-dockerd
+    mode: 0755
+
+- name: Copy cri-dockerd file service
+  become: yes
+  ansible.builtin.copy:
+    src: ./files/etc/systemd/system/cri-docker.service
+    dest: /etc/systemd/system/cri-docker.service
+
+- name: Copy cri-dockerd file socket
+  become: yes
+  ansible.builtin.copy:
+    src: ./files/etc/systemd/system/cri-docker.socket
+    dest: /etc/systemd/system/cri-docker.socket
+
+- name: Deamon relaod
+  become: yes
+  ansible.builtin.shell:
+    cmd: systemctl daemon-reload
+
+- name: Enable cri-docker.service
+  become: yes
+  ansible.builtin.shell:
+    cmd: systemctl enable cri-docker.service
+
+- name: Enable cri-docker.socket
+  become: yes
+  ansible.builtin.shell:
+    cmd: systemctl enable --now cri-docker.socket
+
+- name : Disable setenforce
+  become: yes
+  ansible.builtin.shell:
+    cmd: setenforce 0 && sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/' /etc/selinux/config
+
+- name: Copy Yum repo for kubeadm file
+  become: yes
+  ansible.builtin.copy:
+    src: ./files/etc/yum.repos.d/kubernetes.repo
+    dest: /etc/yum.repos.d/kubernetes.repo
+
+- name: Install Kubeadm, kubelet and kubectl 
+  become: yes
+  ansible.builtin.dnf:
+    name: 
+      - kubelet
+      - kubeadm
+      - kubectl
+    state: latest
+    update_cache: true
+
+- name: Add info on cri-socket for masters
+  become: yes
+  ansible.builtin.copy:
+    src: ./files/cri-socket.yaml
+    dest: /root/cri-socket.yaml

@@ -1,0 +1,36 @@
+---
+- name : Disable setenforce
+  become: yes
+  ansible.builtin.shell:
+    cmd: setenforce 0 && sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/' /etc/selinux/config
+- name: Copy hosts file
+  ansible.builtin.template:
+    src: ./files/hosts
+    dest: /etc/hosts
+    mode: '0666'
+    owner: 0
+    group: 0
+  become: yes
+- name: Configure dns server 
+  become: yes
+  ansible.builtin.shell:
+    cmd: unlink /etc/resolv.conf && echo nameserver 8.8.8.8 > /etc/resolv.conf
+- name: Install nginx
+  become: yes
+  ansible.builtin.dnf:
+    name: 
+      - nginx
+      - nginx-mod-stream
+    update_cache: true
+    state: latest
+- name: Import modules k8s.conf
+  become: yes
+  ansible.builtin.copy:
+    src: ./files/etc/nginx/nginx.conf
+    dest: /etc/nginx/nginx.conf
+- name: Set conf file nginx
+  become: yes
+  ansible.builtin.service:
+    name: nginx
+    state: restarted
+    enabled: true
